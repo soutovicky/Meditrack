@@ -154,19 +154,20 @@ def get_paciente_info(id_paciente):
         return None
 
 # Función para actualizar el estado de una prescripción en administra
-def update_administracion(id_empleado, id_prescripcion, estado):
+def update_administracion(id_empleado, selected_prescripciones):
     try:
         conn = get_db_connection()
         if not conn:
             return False
         cur = conn.cursor()
-        query_insert = """
-            INSERT INTO meditrack.administra (ID_Empleado, ID_Prescripcion, administrado)
-            VALUES (%s, %s, %s)
-            ON CONFLICT (ID_Empleado, ID_Prescripcion)
-            DO UPDATE SET administrado = %s
-        """
-        cur.execute(query_insert, (id_empleado, id_prescripcion, estado, estado))
+        for prescripcion_id, estado in selected_prescripciones.items():
+            query_insert = """
+                INSERT INTO meditrack.administra (ID_Empleado, ID_Prescripcion, administrado)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (ID_Empleado, ID_Prescripcion)
+                DO UPDATE SET administrado = EXCLUDED.administrado
+            """
+            cur.execute(query_insert, (id_empleado, prescripcion_id, estado))
         conn.commit()
         cur.close()
         conn.close()
@@ -183,7 +184,7 @@ def get_prescripciones_paciente(id_paciente):
             return None
         cur = conn.cursor()
         query = """
-            SELECT p.ID_Prescripcion, p.nombre_medicamento, p.horario_administracion, p.dosis_gr, COALESCE(a.administrado, False) as administrado
+            SELECT p.ID_Prescripcion, p.nombre_medicamento, p.horario_administracion, p.dosis_gr, COALESCE(a.administrado, FALSE) as administrado
             FROM meditrack.prescripcion p
             LEFT JOIN meditrack.administra a ON p.ID_Prescripcion = a.ID_Prescripcion AND a.ID_Empleado = %s
             WHERE p.ID_Pacientes = %s
@@ -200,53 +201,54 @@ def get_prescripciones_paciente(id_paciente):
 # Función para administrar la página de administrar medicamentos
 def admin_medicamentos_page():
     st.header("Administración de Medicamentos")
-    
+
+    # Inicializar session_state variables
+    if 'paciente_encontrado' not in st.session_state:
+        st.session_state['paciente_encontrado'] = False
+    if 'selected_prescripciones' not in st.session_state:
+        st.session_state['selected_prescripciones'] = {}
+
     # Input para ingresar el ID del paciente
     id_paciente = st.text_input("ID del Paciente:", key="admin_paciente_id")
-    
-    # Variable para almacenar las prescripciones seleccionadas
-    selected_prescripciones = {}
+
+    # Inicializar prescripciones
+    prescripciones = []
 
     # Botón para buscar las prescripciones del paciente
     if st.button("Buscar Prescripciones", key="btn_buscar_prescripciones"):
-        # Lógica para buscar las prescripciones del paciente
         if id_paciente:
             prescripciones = get_prescripciones_paciente(id_paciente)
             if prescripciones:
+                st.session_state['paciente_encontrado'] = True
+                st.session_state['selected_prescripciones'] = {prescripcion[0]: prescripcion[4] for prescripcion in prescripciones}
                 st.success("Prescripciones encontradas:")
-                for prescripcion in prescripciones:
-                    prescripcion_info = f"{prescripcion[1]} - Horario: {prescripcion[2]} - Dosis: {prescripcion[3]}"
-                    activar_key = f"activar_{prescripcion[0]}"
-                    administrar_key = f"administrar_{prescripcion[0]}"
-                    activar_checkbox = st.checkbox(f"Activar {prescripcion_info}", key=activar_key)
-                    administrar_checkbox = st.checkbox(f"Administrar {prescripcion_info}", key=administrar_key)
-                    selected_prescripciones[prescripcion[0]] = {
-                        "activar": activar_checkbox,
-                        "administrar": administrar_checkbox,
-                        "estado_actual": prescripcion[4]
-                    }
+            else:
+                st.warning("No se encontraron prescripciones para el paciente.")
+                st.session_state['paciente_encontrado'] = False
+        else:
+            st.error("Por favor, ingrese el ID del paciente.")
+
+    # Mostrar las prescripciones si el paciente ha sido encontrado
+    if st.session_state['paciente_encontrado']:
+        prescripciones = get_prescripciones_paciente(id_paciente)
+        if prescripciones:
+            for prescripcion in prescripciones:
+                prescripcion_info = f"{prescripcion[1]} - Horario: {prescripcion[2]} - Dosis: {prescripcion[3]} mg"
+                st.session_state['selected_prescripciones'][prescripcion[0]] = st.checkbox(
+                    prescripcion_info,
+                    value=st.session_state['selected_prescripciones'][prescripcion[0]],
+                    key=f"chk_prescripcion_{prescripcion[0]}"
+                )
 
     # Botón para guardar los cambios
     if st.button("Guardar Cambios", key="btn_guardar_cambios"):
-        if id_paciente and selected_prescripciones:
-            for prescripcion_id, acciones in selected_prescripciones.items():
-                if acciones['activar']:
-                    # Activar la prescripción
-                    if not update_administracion(st.session_state['user_id'], prescripcion_id, False):
-                        st.error(f"Error al activar la prescripción {prescripcion_id}")
-                        return
-                if acciones['administrar']:
-                    # Administrar la prescripción
-                    if acciones['estado_actual'] is not None:
-                        nuevo_estado = not acciones['estado_actual']
-                        if not update_administracion(st.session_state['user_id'], prescripcion_id, nuevo_estado):
-                            st.error(f"Error al administrar la prescripción {prescripcion_id}")
-                            return
-                    else:
-                        st.warning(f"Debe activar la prescripción {prescripcion_id} antes de administrarla.")
+        if update_administracion(st.session_state['user_id'], st.session_state['selected_prescripciones']):
             st.success("Cambios guardados correctamente.")
         else:
-            st.warning("No se han seleccionado prescripciones o no se ha ingresado el ID del paciente.")
+            st.error("Error al guardar los cambios.")
+        st.session_state['paciente_encontrado'] = False
+        st.session_state['selected_prescripciones'] = {}
+
 
 
 # Función para obtener la información de un paciente
