@@ -1,5 +1,6 @@
 import streamlit as st
 import psycopg2
+import random
 
 st.title("Establezca su Ocupación")
 
@@ -161,13 +162,28 @@ def update_administracion(id_empleado, selected_prescripciones):
             return False
         cur = conn.cursor()
         for prescripcion_id, estado in selected_prescripciones.items():
-            query_insert = """
-                INSERT INTO meditrack.administra (ID_Empleado, ID_Prescripcion, administrado)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (ID_Empleado, ID_Prescripcion)
-                DO UPDATE SET administrado = EXCLUDED.administrado
+            # Verificar si la prescripción ya existe en la tabla administra
+            query_check = """
+                SELECT 1 FROM meditrack.administra
+                WHERE ID_Empleado = %s AND ID_Prescripcion = %s
             """
-            cur.execute(query_insert, (id_empleado, prescripcion_id, estado))
+            cur.execute(query_check, (id_empleado, prescripcion_id))
+            exists = cur.fetchone()
+            if exists:
+                # Si existe, actualizar el valor de administrado
+                query_update = """
+                    UPDATE meditrack.administra
+                    SET administrado = %s
+                    WHERE ID_Empleado = %s AND ID_Prescripcion = %s
+                """
+                cur.execute(query_update, (estado, id_empleado, prescripcion_id))
+            else:
+                # Si no existe, insertar una nueva fila
+                query_insert = """
+                    INSERT INTO meditrack.administra (ID_Empleado, ID_Prescripcion, administrado)
+                    VALUES (%s, %s, %s)
+                """
+                cur.execute(query_insert, (id_empleado, prescripcion_id, estado))
         conn.commit()
         cur.close()
         conn.close()
@@ -249,9 +265,78 @@ def admin_medicamentos_page():
         st.session_state['paciente_encontrado'] = False
         st.session_state['selected_prescripciones'] = {}
 
+#Funcion para insertar paciente en tabla
+def insertar_paciente(id_paciente, nombre, apellido, habitacion, alergias, contacto_telefonico, diagnostico, obra_social):
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return False
+        cur = conn.cursor()
+        query_insert = """
+            INSERT INTO meditrack.pacientes (ID_Pacientes, nombre, apellido, habitacion, alergias, contacto_telefonico, diagnostico, obra_social)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        cur.execute(query_insert, (id_paciente, nombre, apellido, habitacion, alergias, contacto_telefonico, diagnostico, obra_social))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return True
+    except Exception as e:
+        st.error(f"Error al insertar el paciente: {e}")
+        return False
 
+#Funcion para dar de alta el paciente
+def alta_paciente_page():
+    st.header("Alta de Paciente")
 
-# Función para obtener la información de un paciente
+    # Generar un ID aleatorio para el paciente
+    id_paciente = random.randint(100000000, 999999999)
+
+    # Mostrar el ID del paciente
+    st.write(f"ID del Paciente: {id_paciente}")
+
+    # Formulario para dar de alta a un nuevo paciente
+    with st.form("alta_paciente_form"):
+        nombre = st.text_input("Nombre")
+        apellido = st.text_input("Apellido")
+        habitacion = st.text_input("Habitación")
+        alergias = st.text_area("Alergias")
+        contacto_telefonico = st.text_input("Contacto Telefónico")
+        diagnostico = st.text_area("Diagnóstico")
+        obra_social = st.text_input("Obra Social")
+
+        submitted = st.form_submit_button("Dar de Alta")
+
+        if submitted:
+            if not nombre or not apellido:
+                st.error("Por favor, complete los campos obligatorios (Nombre y Apellido).")
+            else:
+                if insertar_paciente(id_paciente, nombre, apellido, habitacion, alergias, contacto_telefonico, diagnostico, obra_social):
+                    st.success("Paciente dado de alta exitosamente.")
+                else:
+                    st.error("Error al dar de alta al paciente.")
+
+# Función para actualizar la información de un paciente
+def update_paciente_info(id_paciente, nombre, apellido, habitacion, alergias, contacto_telefonico, diagnostico, obra_social):
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return False
+        cur = conn.cursor()
+        query = """
+            UPDATE meditrack.pacientes
+            SET nombre = %s, apellido = %s, habitacion = %s, alergias = %s, contacto_telefonico = %s, diagnostico = %s, obra_social = %s
+            WHERE ID_Pacientes = %s
+        """
+        cur.execute(query, (nombre, apellido, habitacion, alergias, contacto_telefonico, diagnostico, obra_social, id_paciente))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return True
+    except Exception as e:
+        st.error(f"Error al actualizar la información del paciente: {e}")
+        return False
+
 def get_paciente_info(id_paciente):
     try:
         conn = get_db_connection()
@@ -269,60 +354,55 @@ def get_paciente_info(id_paciente):
         conn.close()
         return result
     except Exception as e:
-        st.error(f"Error al obtener información del paciente: {e}")
+        st.error(f"Error al obtener la información del paciente: {e}")
         return None
-
-# Función para actualizar la información de un paciente
-def update_paciente_info(id_paciente, nombre, apellido, habitacion, alergias, contacto_telefonico, diagnostico, obra_social):
-    try:
-        conn = get_db_connection()
-        if not conn:
-            return False
-        cur = conn.cursor()
-        query = """
-            UPDATE pacientes
-            SET nombre = %s, apellido = %s, habitacion = %s, alergias = %s, contacto_telefonico = %s, diagnostico = %s, obra_social = %s
-            WHERE ID_Pacientes = %s
-        """
-        cur.execute(query, (nombre, apellido, habitacion, alergias, contacto_telefonico, diagnostico, obra_social, id_paciente))
-        conn.commit()
-        cur.close()
-        conn.close()
-        return True
-    except Exception as e:
-        st.error(f"Error al actualizar la información del paciente: {e}")
-        return False
+    
 
 # Función para la página de perfil de pacientes
 def perfil_pacientes_page():
     st.header("Perfil de Pacientes")
-    id_paciente = st.text_input("ID del Paciente:", key="perfil_paciente_id")
+    
+    # Inicializar session_state
+    if 'paciente_info' not in st.session_state:
+        st.session_state.paciente_info = None
+
+    if 'id_paciente' not in st.session_state:
+        st.session_state.id_paciente = ""
+
+    # Input para ingresar el ID del paciente
+    id_paciente = st.text_input("ID del Paciente:", key="perfil_paciente_id", value=st.session_state.id_paciente)
 
     if st.button("Buscar Paciente", key="btn_buscar_paciente"):
         if id_paciente:
             paciente_info = get_paciente_info(id_paciente)
             if paciente_info:
                 st.success("Información del paciente encontrada:")
-                with st.form(key="form_paciente"):
-                    nombre = st.text_input("Nombre", value=paciente_info[1])
-                    apellido = st.text_input("Apellido", value=paciente_info[2])
-                    habitacion = st.text_input("Habitación", value=paciente_info[3])
-                    alergias = st.text_area("Alergias", value=paciente_info[4])
-                    contacto_telefonico = st.text_input("Contacto Telefónico", value=paciente_info[5])
-                    diagnostico = st.text_area("Diagnóstico", value=paciente_info[6])
-                    obra_social = st.text_input("Obra Social", value=paciente_info[7])
-                    submit_button = st.form_submit_button(label="Actualizar Información")
-
-                    if submit_button:
-                        success = update_paciente_info(id_paciente, nombre, apellido, habitacion, alergias, contacto_telefonico, diagnostico, obra_social)
-                        if success:
-                            st.success("Información del paciente actualizada correctamente.")
-                        else:
-                            st.error("Error al actualizar la información del paciente.")
+                st.session_state.paciente_info = paciente_info
+                st.session_state.id_paciente = id_paciente
             else:
                 st.warning("No se encontró información para el paciente.")
         else:
             st.error("Por favor, ingrese el ID del paciente.")
+
+    if st.session_state.paciente_info:
+        paciente_info = st.session_state.paciente_info
+        with st.form(key="form_paciente"):
+            nombre = st.text_input("Nombre", value=paciente_info[1])
+            apellido = st.text_input("Apellido", value=paciente_info[2])
+            habitacion = st.text_input("Habitación", value=paciente_info[3])
+            alergias = st.text_area("Alergias", value=paciente_info[4])
+            contacto_telefonico = st.text_input("Contacto Telefónico", value=paciente_info[5])
+            diagnostico = st.text_area("Diagnóstico", value=paciente_info[6])
+            obra_social = st.text_input("Obra Social", value=paciente_info[7])
+            submit_button = st.form_submit_button(label="Actualizar Información")
+
+            if submit_button:
+                success = update_paciente_info(st.session_state.id_paciente, nombre, apellido, habitacion, alergias, contacto_telefonico, diagnostico, obra_social)
+                if success:
+                    st.success("Información del paciente actualizada correctamente.")
+                    st.session_state.paciente_info = None  # Reset para nueva búsqueda
+                else:
+                    st.error("Error al actualizar la información del paciente.")
 
 # Función para obtener el horario de trabajo y el área de un empleado
 def get_horario_area(id_empleado):
@@ -348,7 +428,7 @@ def get_horario_area(id_empleado):
 # Función para la página de doctores con pestañas
 def doctor_page():
     st.title("Página de Doctor")
-    tab1, tab2, tab3 = st.tabs(["Ver Paciente", "Añadir Prescripción", "Prescripciones Asignadas"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Ver Paciente", "Añadir Prescripción", "Prescripciones Asignadas", "Editar Perfil de Paciente"])
 
     with tab1:
         st.header("Ver Paciente")
@@ -407,12 +487,14 @@ def doctor_page():
                     st.error("No se encontraron prescripciones para ese paciente.")
             else:
                 st.error("Por favor, ingrese el ID del paciente.")
-        
+
+    with tab4:
+        perfil_pacientes_page()    
 
 # Función para la página de empleados con pestañas
 def empleado_page():
     st.title("Página de Empleado")
-    tab1, tab2, tab3 = st.tabs(["Administración de Medicamentos", "Horarios de Trabajo", "Información del Paciente"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Administración de Medicamentos", "Horarios de Trabajo", "Información del Paciente", "Ingresar Nuevo Paciente"])
 
     with tab1:
         admin_medicamentos_page()
@@ -429,6 +511,9 @@ def empleado_page():
 
     with tab3:
         perfil_pacientes_page()
+
+    with tab4:
+        alta_paciente_page()
 
 # Main application logic
 if st.session_state['estado'] == 'Autorizado':
