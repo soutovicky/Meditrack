@@ -1,6 +1,8 @@
 import streamlit as st
 import psycopg2
 import random
+import datetime
+from datetime import datetime, timedelta
 
 st.title("Establezca su Ocupación")
 
@@ -74,12 +76,36 @@ def check_id_in_doctores(id_to_check):
         return None
 
 
+# Función para obtener las alergias de un paciente
+def get_paciente_alergias(id_paciente):
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return None
+        cur = conn.cursor()
+        query = "SELECT alergias FROM meditrack.pacientes WHERE ID_Pacientes = %s"
+        cur.execute(query, (id_paciente,))
+        result = cur.fetchone()
+        cur.close()
+        conn.close()
+        return result[0] if result else None
+    except Exception as e:
+        st.error(f"Error al obtener las alergias del paciente: {e}")
+        return None
+
 # Función para añadir una nueva prescripción
 def add_prescripcion(id_prescripcion, nombre_medicamento, horario_administracion, dosis_gr, id_paciente, id_doctor):
     try:
         conn = get_db_connection()
         if not conn:
             return None
+        
+        # Verificar alergias antes de añadir la prescripción
+        alergias = get_paciente_alergias(id_paciente)
+        if alergias and nombre_medicamento.lower() in alergias.lower():
+            st.warning(f"El paciente es alérgico a {nombre_medicamento}. No se puede recetar este medicamento.")
+            return None
+        
         cur = conn.cursor()
         query = """
             INSERT INTO meditrack.prescripcion (ID_Prescripcion, nombre_medicamento, horario_administracion, dosis_gr, ID_Pacientes, ID_Doctor)
@@ -357,7 +383,6 @@ def get_paciente_info(id_paciente):
         st.error(f"Error al obtener la información del paciente: {e}")
         return None
     
-
 # Función para la página de perfil de pacientes
 def perfil_pacientes_page():
     st.header("Perfil de Pacientes")
@@ -421,7 +446,6 @@ def perfil_pacientes_page():
                 else:
                     st.error("Error al actualizar la información del paciente.")
 
-
 # Función para obtener el horario de trabajo y el área de un empleado
 def get_horario_area(id_empleado):
     try:
@@ -443,43 +467,105 @@ def get_horario_area(id_empleado):
         st.error(f"Error al obtener el horario y área del empleado: {e}")
         return None
 
+
+#Funcion para pagina de prescripciones en doctores
+def prescripcion_page():
+    st.header("Prescripción")
+    
+    id_prescripcion = st.text_input("ID de la Prescripción:", key="add_prescripcion_id")
+    nombre_medicamento = st.text_input("Nombre del Medicamento:", key="add_prescripcion_nombre_medicamento")
+    horario_administracion = st.time_input("Horario de Administración:", key="add_prescripcion_horario")
+    dosis_gr = st.number_input("Dosis (gramos):", min_value=0.0, step=0.1, key="add_prescripcion_dosis")
+    id_paciente = st.text_input("ID del Paciente:", key="add_prescripcion_paciente_id")
+    
+    if st.button("Añadir Prescripción", key="btn_add_prescripcion"):
+        if id_prescripcion and nombre_medicamento and horario_administracion and dosis_gr and id_paciente:
+            add_prescripcion(id_prescripcion, nombre_medicamento, horario_administracion, dosis_gr, id_paciente, st.session_state['user_id'])
+        else:
+            st.error("Por favor, complete todos los campos.")
+
+
+
+#####funciones a probar
+# Función para obtener los medicamentos y horarios de administración
+def get_medicamentos_horarios():
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return None
+        cur = conn.cursor()
+        query = """
+            SELECT p.ID_Pacientes, p.nombre_medicamento, p.horario_administracion
+            FROM meditrack.prescripcion p
+            LEFT JOIN meditrack.administra a ON p.ID_Prescripcion = a.ID_Prescripcion
+            WHERE a.administrado = FALSE
+        """
+        cur.execute(query)
+        result = cur.fetchall()
+        cur.close()
+        conn.close()
+        return result
+    except Exception as e:
+        st.error(f"Error al obtener los horarios de medicamentos: {e}")
+        return None
+
+def get_recordatorios():
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return None
+        cur = conn.cursor()
+        query = """
+            SELECT p.ID_Prescripcion, p.nombre_medicamento, p.horario_administracion, p.dosis_gr, pa.nombre, pa.apellido
+            FROM meditrack.prescripcion p
+            JOIN meditrack.pacientes pa ON p.ID_Pacientes = pa.ID_Pacientes
+            WHERE p.horario_administracion BETWEEN %s AND %s
+        """
+        now = datetime.now()
+        start_time = now - timedelta(minutes=15)  # Recordatorios para los últimos 15 minutos
+        end_time = now + timedelta(minutes=15)  # Recordatorios para los próximos 15 minutos
+        cur.execute(query, (start_time.time(), end_time.time()))
+        result = cur.fetchall()
+        cur.close()
+        conn.close()
+        return result
+    except Exception as e:
+        st.error(f"Error al obtener los recordatorios: {e}")
+        return None
+
+# Función para mostrar recordatorios de medicamentos
+def recordatorios_medicamentos_page():
+    st.header("Recordatorios de Medicamentos")
+    recordatorios = get_recordatorios()
+    
+    if recordatorios:
+        for rec in recordatorios:
+            id_prescripcion, nombre_medicamento, horario_administracion, dosis_gr, nombre_paciente, apellido_paciente = rec
+            st.warning(f"¡Recordatorio! Administrar {nombre_medicamento} ({dosis_gr}g) a {nombre_paciente} {apellido_paciente} a las {horario_administracion}.")
+    else:
+        st.info("No hay recordatorios en este momento.")
+
 # Función para la página de doctores con pestañas
 def doctor_page():
     st.title("Página de Doctor")
-    tab1, tab2, tab3, tab4 = st.tabs(["Ver Paciente", "Añadir Prescripción", "Prescripciones Asignadas", "Editar Perfil de Paciente"])
+    tab1, tab2, tab3 = st.tabs(["Ver Paciente", "Añadir Prescripción", "Prescripciones Asignadas"])
 
     with tab1:
-        st.header("Ver Paciente")
-        id_paciente = st.text_input("ID del Paciente:", key="view_paciente_id")
-        if st.button("Ver Información del Paciente", key="btn_view_paciente"):
-            if id_paciente:
-                paciente_info = get_paciente_info(id_paciente)
-                if paciente_info:
-                    st.write(f"ID: {paciente_info[0]}")
-                    st.write(f"Nombre: {paciente_info[1]}")
-                    st.write(f"Apellido: {paciente_info[2]}")
-                    st.write(f"Habitación: {paciente_info[3]}")
-                    st.write(f"Alergias: {paciente_info[4]}")
-                    st.write(f"Contacto Telefónico: {paciente_info[5]}")
-                    st.write(f"Diagnóstico: {paciente_info[6]}")
-                    st.write(f"Obra Social: {paciente_info[7]}")
-                else:
-                    st.error("No se encontró información para el ID de paciente ingresado.")
-            else:
-                st.error("Por favor, ingrese un ID de paciente.")
+        perfil_pacientes_page() 
 
     with tab2:
-        st.header("Prescripción")
-        id_prescripcion = st.text_input("ID de la Prescripción:", key="add_prescripcion_id")
-        nombre_medicamento = st.text_input("Nombre del Medicamento:", key="add_prescripcion_nombre_medicamento")
-        horario_administracion = st.time_input("Horario de Administración:", key="add_prescripcion_horario")
-        dosis_gr = st.number_input("Dosis (gramos):", min_value=0.0, step=0.1, key="add_prescripcion_dosis")
-        id_paciente = st.text_input("ID del Paciente:", key="add_prescripcion_paciente_id")
-        if st.button("Añadir Prescripción", key="btn_add_prescripcion"):
-            if id_prescripcion and nombre_medicamento and horario_administracion and dosis_gr and id_paciente:
-                add_prescripcion(id_prescripcion, nombre_medicamento, horario_administracion, dosis_gr, id_paciente, st.session_state['user_id'])
-            else:
-                st.error("Por favor, complete todos los campos.")
+        prescripcion_page()
+        #st.header("Prescripción")
+        #id_prescripcion = st.text_input("ID de la Prescripción:", key="add_prescripcion_id")
+        #nombre_medicamento = st.text_input("Nombre del Medicamento:", key="add_prescripcion_nombre_medicamento")
+        #horario_administracion = st.time_input("Horario de Administración:", key="add_prescripcion_horario")
+        #dosis_gr = st.number_input("Dosis (gramos):", min_value=0.0, step=0.1, key="add_prescripcion_dosis")
+        #id_paciente = st.text_input("ID del Paciente:", key="add_prescripcion_paciente_id")
+        #if st.button("Añadir Prescripción", key="btn_add_prescripcion"):
+           #if id_prescripcion and nombre_medicamento and horario_administracion and dosis_gr and id_paciente:
+                #add_prescripcion(id_prescripcion, nombre_medicamento, horario_administracion, dosis_gr, id_paciente, st.session_state['user_id'])
+            #else:
+                #st.error("Por favor, complete todos los campos.")
 
     with tab3:
         st.header("Prescripciones Asignadas")
@@ -505,14 +591,11 @@ def doctor_page():
                     st.error("No se encontraron prescripciones para ese paciente.")
             else:
                 st.error("Por favor, ingrese el ID del paciente.")
-
-    with tab4:
-        perfil_pacientes_page()    
-
+        
 # Función para la página de empleados con pestañas
 def empleado_page():
     st.title("Página de Empleado")
-    tab1, tab2, tab3, tab4 = st.tabs(["Administración de Medicamentos", "Horarios de Trabajo", "Información del Paciente", "Ingresar Nuevo Paciente"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Administración de Medicamentos", "Horarios de Trabajo", "Información del Paciente", "Ingresar Nuevo Paciente", "Recordatorio de Medicamentos"])
 
     with tab1:
         admin_medicamentos_page()
@@ -532,6 +615,9 @@ def empleado_page():
 
     with tab4:
         alta_paciente_page()
+
+    with tab5:
+        recordatorios_medicamentos_page()
 
 # Main application logic
 if st.session_state['estado'] == 'Autorizado':
