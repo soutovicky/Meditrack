@@ -90,7 +90,8 @@ def update_user_details(id, nombre, apellido,  table):
 # Interfaz de Streamlit
 st.title("Iniciar Sesión")
 
-id_input = st.text_input("Ingrese el ID de Empleado o Doctor:")
+id_input = st.text_input("ID de Empleado o Doctor:", type="password", key="perfil_paciente_id")
+#id_input = st.text_input("Ingrese el ID de Empleado o Doctor:")
 nombre_input = st.text_input("Ingrese su Nombre:")
 apellido_input = st.text_input("Ingrese su Apellido:")
 
@@ -100,7 +101,7 @@ if 'estado' not in st.session_state:
 if 'user_role' not in st.session_state:
     st.session_state['user_role'] = None
 
-if st.button("Registrar"):
+if st.button("Iniciar Sesion"):
     if not id_input or not nombre_input or not apellido_input:
         st.error("Por favor, complete todos los campos.")
     else:
@@ -116,6 +117,7 @@ if st.button("Registrar"):
             st.session_state['estado'] = 'Autorizado'
             st.session_state['user_role'] = 'Empleado'
             st.page_link("pages/3_Mi_Perfil.py", label="Mi Perfil", icon="➡️", help=None, disabled=False, use_container_width=None)
+            st.page_link("Bienvenidos.py", label="Volver al Inicio", icon="➡️", help=None, disabled=False, use_container_width=None)
 
         elif doctor_details:
             update_user_details(id_input, nombre_input, apellido_input,  'doctor')
@@ -125,5 +127,7 @@ if st.button("Registrar"):
             st.session_state['estado'] = 'Autorizado'
             st.session_state['user_role'] = 'Doctor'
             st.page_link("pages/3_Mi_Perfil.py", label="Mi Perfil", icon="➡️", help=None, disabled=False, use_container_width=None)
+            st.page_link("Bienvenidos.py", label="Volver al Inicio", icon="➡️", help=None, disabled=False, use_container_width=None)
+
         else:
             st.error("El ID no existe en la base de datos.")
