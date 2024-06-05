@@ -386,6 +386,22 @@ def perfil_pacientes_page():
 
     if st.session_state.paciente_info:
         paciente_info = st.session_state.paciente_info
+        st.table({
+            "ID Paciente": [paciente_info[0]],
+            "Nombre": [paciente_info[1]],
+            "Apellido": [paciente_info[2]],
+            "Habitación": [paciente_info[3]],
+            "Alergias": [paciente_info[4]],
+            "Contacto Telefónico": [paciente_info[5]],
+            "Diagnóstico": [paciente_info[6]],
+            "Obra Social": [paciente_info[7]]
+        })
+
+        if st.button("Editar Información"):
+            st.session_state.editing = True
+
+    if 'editing' in st.session_state and st.session_state.editing:
+        paciente_info = st.session_state.paciente_info
         with st.form(key="form_paciente"):
             nombre = st.text_input("Nombre", value=paciente_info[1])
             apellido = st.text_input("Apellido", value=paciente_info[2])
@@ -400,9 +416,11 @@ def perfil_pacientes_page():
                 success = update_paciente_info(st.session_state.id_paciente, nombre, apellido, habitacion, alergias, contacto_telefonico, diagnostico, obra_social)
                 if success:
                     st.success("Información del paciente actualizada correctamente.")
-                    st.session_state.paciente_info = None  # Reset para nueva búsqueda
+                    st.session_state.paciente_info = get_paciente_info(st.session_state.id_paciente)  # Actualiza la información del paciente
+                    st.session_state.editing = False
                 else:
                     st.error("Error al actualizar la información del paciente.")
+
 
 # Función para obtener el horario de trabajo y el área de un empleado
 def get_horario_area(id_empleado):
